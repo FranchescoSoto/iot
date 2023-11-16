@@ -1,4 +1,3 @@
-
 #include <Arduino.h>
 
 #include <HTTPClient.h>
@@ -19,7 +18,7 @@ const char* ssid = "Wokwi-GUEST";
 
 const char* password = "";
 
-
+const int deviceId=3;
 
 
 
@@ -70,7 +69,7 @@ void setup() {
   Serial.println("Conectado a la red wifi...");
 
   HTTPClient http1;
-  http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/1");
+  http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/"+String(deviceId));
 
  dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
 
@@ -110,9 +109,11 @@ void loop() {
   bool active=false;
   bool activeNotification=false;
   bool activeRealTimeData=false;
+  string cropName;
   double planTemperature;
+  int accountId;
   HTTPClient http1;
-  http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/1");
+  http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/"+String(deviceId));
   int httpResponseCode1=http1.GET();
   if (httpResponseCode1 > 0) {
       String response = http1.getString();
@@ -123,6 +124,9 @@ void loop() {
       active=deviceData["active"];
       activeNotification=deviceData["activeNotification"];
       activeRealTimeData=deviceData["activeRealTimeData"];
+      accountId=deviceData["farmerId"];
+      const char* cropNameCStr = deviceData["cropName"];
+      cropName = std::string(cropNameCStr);
     } else {
       Serial.print("Error en la solicitud HTTP GET, código de respuesta: ");
       Serial.println(httpResponseCode1);
@@ -134,7 +138,7 @@ if(activeRealTimeData){
   HTTPClient http2;
   http2.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/temperature");
   StaticJsonDocument<200> sendTemperature;
-  sendTemperature["deviceId"]=1;
+  sendTemperature["deviceId"]=deviceId;
   sendTemperature["temperature"]=data.temperature;
   sendTemperature["humidity"]=data.humidity;
 
@@ -161,18 +165,18 @@ if(activeRealTimeData){
   /* Antes de entrar al if de aca abajo, hacer un get a GetActiveNotificationByDeviceId() para saber si esta activada las notificaciones*/
 
   if ((data.temperature < 3 || data.temperature > 15)&&activeNotification) {
-
+    
  StaticJsonDocument<200> jsonDoc;
 
- jsonDoc["message"] = "Temperatura fuera de rango"; // Puedes personalizar el mensaje
+ jsonDoc["message"] =" temperature or humidity out of range"; // Puedes personalizar el mensaje
 
  jsonDoc["imageUrl"] = "string"; // Puedes ajustar la URL de la imagen
 
- jsonDoc["notificationType"] = "string"; // Puedes especificar el tipo de notificación
+ jsonDoc["notificationType"] = "crop"; // Puedes especificar el tipo de notificación
 
- jsonDoc["date"] = "2023-11-02T18:28:21.214Z"; // Puedes establecer la fecha
+ jsonDoc["date"] = "03/11/2023 21:14:49"; // Puedes establecer la fecha
 
- jsonDoc["toAccountId"] = 0; // Puedes ajustar el destinatario de la notificación
+ jsonDoc["toAccountId"] = accountId; // Puedes ajustar el destinatario de la notificación
 
  jsonDoc["plantId"] = 0; // Puedes establecer el ID de la planta
 
