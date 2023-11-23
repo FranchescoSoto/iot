@@ -18,7 +18,7 @@ const char* ssid = "Wokwi-GUEST";
 
 const char* password = "";
 
-const int deviceId=3;
+const int deviceId=4;
 
 
 
@@ -34,9 +34,12 @@ const int deviceId=3;
 
 const int DHT_PIN = 15;
 
-
-
-
+bool rangesExist=false;
+double maxTemp;
+double minTemp;
+double maxHum;
+double minHum;
+int plantId;
 
 DHTesp dhtSensor;
 
@@ -68,9 +71,7 @@ void setup() {
 
   Serial.println("Conectado a la red wifi...");
 
-  HTTPClient http1;
-  http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/"+String(deviceId));
-
+  
  dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
 
  lcd.init();
@@ -99,25 +100,24 @@ void loop() {
  lcd.setCursor(0, 1);
 
  lcd.print(" Humidity: " + String(data.humidity, 1) + "% ");
+ 
 
  lcd.print("Wokwi Online IoT");
+  
 
-
-
-
-  /*GetDeviceById() Si device esta activo, entonces enviar datos tiempo real */
   bool active=false;
   bool activeNotification=false;
   bool activeRealTimeData=false;
   string cropName;
   double planTemperature;
   int accountId;
+  int cropId;
   HTTPClient http1;
   http1.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/devices/"+String(deviceId));
   int httpResponseCode1=http1.GET();
   if (httpResponseCode1 > 0) {
       String response = http1.getString();
-      Serial.print("HTTP GET exitoso, respuesta del servidor:");
+      Serial.print("HTTP GET exitoso del device, respuesta del servidor:");
       Serial.println(response);
       DynamicJsonDocument deviceData(512);
       deserializeJson(deviceData, response);
@@ -125,8 +125,45 @@ void loop() {
       activeNotification=deviceData["activeNotification"];
       activeRealTimeData=deviceData["activeRealTimeData"];
       accountId=deviceData["farmerId"];
+      cropId=deviceData["cropId"];
       const char* cropNameCStr = deviceData["cropName"];
       cropName = std::string(cropNameCStr);
+      //---------------------
+      if(!rangesExist){
+        HTTPClient http0;
+        http0.begin("http://nifty-jet-404014.rj.r.appspot.com/api/v1/crops/getCrop/"+String(cropId));
+        int httpResponseCode0=http0.GET();
+        if(httpResponseCode0>0){
+          String response = http0.getString();
+          
+          Serial.print("HTTP GET exitoso obtener el crop, respuesta del servidor:");
+          Serial.println(response);
+          DynamicJsonDocument cropData(512);
+          deserializeJson(cropData, response);
+          plantId=cropData["plantId"];
+          http0.begin("https://nifty-jet-404014.rj.r.appspot.com/api/v1/plant/ranges/"+String(plantId));
+          int newResponseCode=http0.GET();
+          if(newResponseCode){
+            String response=http0.getString();
+            DynamicJsonDocument rangesData(512);
+            deserializeJson(rangesData, response);
+            maxTemp=rangesData["maxTemperature"];
+            minTemp=rangesData["minTemperature"];
+            maxHum=rangesData["maxHumidity"];
+            minHum=rangesData["minHumidity"];
+            rangesExist=true;
+          }
+          else{
+            Serial.print("HTTP GET fracasó al obtener el crop, respuesta del servidor:");
+            Serial.println(newResponseCode);
+          }
+          
+        }
+      else{
+        Serial.print("La solicitud fracasó, respuesta del servidor: ");
+        Serial.println(httpResponseCode0);
+      }
+  }
     } else {
       Serial.print("Error en la solicitud HTTP GET, código de respuesta: ");
       Serial.println(httpResponseCode1);
@@ -158,19 +195,16 @@ if(activeRealTimeData){
   http2.end();
 }
 
-
-
-
-
-  /* Antes de entrar al if de aca abajo, hacer un get a GetActiveNotificationByDeviceId() para saber si esta activada las notificaciones*/
-
-  if ((data.temperature < 3 || data.temperature > 15)&&activeNotification) {
+  if ((data.temperature < minTemp || data.temperature > maxTemp || data.humidity<minHum||data.humidity>maxHum)&&activeNotification&&rangesExist) {
     
  StaticJsonDocument<200> jsonDoc;
 
- jsonDoc["message"] =" temperature or humidity out of range"; // Puedes personalizar el mensaje
+std::string message = cropName + " temperature or humidity out of range";
 
- jsonDoc["imageUrl"] = "string"; // Puedes ajustar la URL de la imagen
+
+ jsonDoc["message"] =message; // Puedes personalizar el mensaje
+
+ jsonDoc["imageUrl"] = "https://us.123rf.com/450wm/alonastep/alonastep1510/alonastep151000068/47434084-advertencia-de-peligro-muestra-de-la-atenci%C3%B3n-icono-en-un-tri%C3%A1ngulo-amarillo-con-el-s%C3%ADmbolo-de.jpg?ver=6"; // Puedes ajustar la URL de la imagen
 
  jsonDoc["notificationType"] = "crop"; // Puedes especificar el tipo de notificación
 
@@ -178,7 +212,7 @@ if(activeRealTimeData){
 
  jsonDoc["toAccountId"] = accountId; // Puedes ajustar el destinatario de la notificación
 
- jsonDoc["plantId"] = 0; // Puedes establecer el ID de la planta
+ jsonDoc["plantId"] = plantId; // Puedes establecer el ID de la planta
 
  jsonDoc["fromAccountId"] = 0; 
 
@@ -196,21 +230,13 @@ if(activeRealTimeData){
 
  http.addHeader("Content-Type", "application/json");
 
-
-
   int httpResponseCode = http.POST(jsonString);
-
   String response = http.getString();
+  if (httpResponseCode > 0) {
 
   Serial.println("Respuesta del servidor:");
 
   Serial.println(response);
-
-  if (httpResponseCode > 0) {
-
-  Serial.print("HTTP POST exitoso, respuesta: ");
-
-  Serial.println(http.getString());
 
   } else {
 
@@ -219,9 +245,6 @@ if(activeRealTimeData){
   Serial.println(httpResponseCode);
 
   }
-
- http.end();
-
   }
 
   Serial.println("Saliéndose de los rangos, peligro");
